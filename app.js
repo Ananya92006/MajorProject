@@ -207,9 +207,8 @@
 // });
 
 // app.listen(8000, () => console.log("Server is listening on port 8000"));
-
-if (!process.env.NODE_ENV !== "production") {
-    require('dotenv').config();
+if (process.env.NODE_ENV !== "production") {
+    require("dotenv").config();
 }
 
 const express = require("express");
@@ -230,15 +229,25 @@ const userRouter = require("./routes/user.js");
 const ExpressError = require("./utils/expressError.js");
 const { isLoggedIn } = require("./middleware.js");
 
-// MongoDB Connection
-const dbUrl = process.env.ATLASDB_URL;
-async function main() {
-    await mongoose.connect(dbUrl);
-    console.log("Connected to DB");
+// ✅ MongoDB Connection
+const dbUrl = process.env.MONGO_URI;
+if (!dbUrl) {
+    console.error("MongoDB URI is missing!");
+    process.exit(1);
 }
-main().catch(err => console.error("Error connecting to DB:", err));
 
-// App setup
+async function connectDB() {
+    try {
+        await mongoose.connect(dbUrl);
+        console.log("✅ Connected to MongoDB");
+    } catch (err) {
+        console.error("❌ MongoDB Connection Error:", err);
+        process.exit(1);
+    }
+}
+connectDB();
+
+// ✅ App setup
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 app.engine("ejs", ejsMate);
@@ -246,24 +255,24 @@ app.use(express.urlencoded({ extended: true }));
 app.use(methodOverride("_method"));
 app.use(express.static(path.join(__dirname, "/public")));
 
-// MongoDB Session Store Setup (Define store First)
+// ✅ MongoDB Session Store Setup
 const store = MongoStore.create({
     mongoUrl: dbUrl,
     crypto: { secret: process.env.SECRET },
     touchAfter: 24 * 3600,
 });
 store.on("error", (err) => {
-    console.log("Error in mongoSession store", err);
+    console.error("❌ MongoDB Session Store Error:", err);
 });
 
-// Session setup (Use store After Initialization)
+// ✅ Session setup
 const sessionOptions = {
     store,
-    secret: process.env.SECRET,
+    secret: process.env.SECRET || "fallbacksecret",
     resave: false,
     saveUninitialized: true,
     cookie: {
-        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 1 week
+        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         maxAge: 7 * 24 * 60 * 60 * 1000,
         httpOnly: true,
     },
@@ -278,7 +287,7 @@ passport.use(new LocalStrategy(User.authenticate()));
 passport.serializeUser(User.serializeUser());
 passport.deserializeUser(User.deserializeUser());
 
-// Middleware to make flash messages available in all views
+// ✅ Flash Messages Middleware
 app.use((req, res, next) => {
     res.locals.success = req.flash("success");
     res.locals.error = req.flash("error");
@@ -286,43 +295,23 @@ app.use((req, res, next) => {
     next();
 });
 
-app.get("/demouser", async (req, res) => {
-    const fakeUser = new User({
-        email: "student@gmail.com",
-        username: "delta-student",
-    });
-
-    try {
-        const existingUser = await User.findOne({ username: fakeUser.username });
-        if (existingUser) {
-            return res.status(400).send("User already exists!");
-        }
-
-        const registeredUser = await User.register(fakeUser, "helloworld");
-        res.send("User registered successfully: " + registeredUser.username);
-    } catch (error) {
-        if (error.name === "UserExistsError") {
-            return res.status(400).send("A user with this username already exists.");
-        }
-        res.status(500).send("Internal server error");
-    }
-});
-
-// Routes
+// ✅ Routes
 app.use("/listings", listingRouter);
 app.use("/listings/:id/reviews", reviewRouter);
 app.use("/", userRouter);
 
-// 404 handler
+// ✅ 404 handler
 app.all("*", (req, res, next) => {
     next(new ExpressError("Page Not Found!", 404));
 });
 
-// Error handling middleware
+// ✅ Error Handling Middleware
 app.use((err, req, res, next) => {
     const { statusCode = 500 } = err;
     if (!err.message) err.message = "Something went wrong!";
     res.status(statusCode).render("error", { err });
 });
 
-app.listen(8000, () => console.log("Server is listening on port 8000"));
+// ✅ Server Listener
+const PORT = process.env.PORT || 8000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
